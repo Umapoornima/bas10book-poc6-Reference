@@ -1,0 +1,281 @@
+MANUALLY SET-IT UP THE THREE-TIER ARCHITECHTURE BASTIONBOOK APPLICATION
+========================================================================
+
+PROCEDURE (back-end to database link: https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway-tutorial.html )
+============================================================================================================================
+First need to create a permissions policy to give your function permission to access the required AWS resources.
+Create IAM role that grants a Lambda function permission to access AWS services and resources. To enable your function to perform operations on a DynamoDB table, you attach the permissions policy you created in the previous step.
+Launch one ec2-instance with ubuntu 22.04 change your region to us-west-2(oregon)
+
+sudo apt install zip
+sudo touch LambdaFunctionOverHttps.py
+sudo chmod 777 LambdaFunctionOverHttps.py
+sudo vim LambdaFunctionOverHttps.py
+{
+  paste your lambda function code in this file (you can get lambda-code from above link)
+}
+sudo apt update
+sudo apt install python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools
+
+python-3.9 Installation
+========================
+sudo apt update
+sudo apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libsqlite3-dev libreadline-dev libffi-dev wget
+wget https://www.python.org/ftp/python/3.9.7/Python-3.9.7.tgz
+tar -xf Python-3.9.7.tgz
+cd Python-3.9.7
+sudo ./configure --enable-optimizations
+make -j 4  # Use a number based on your system's CPU cores
+sudo make altinstall
+sudo python3.9 --version          ==== To check python version
+
+
+AWS-Configure
+=============
+sudo apt  install awscli
+aws configure
+
+Lmbda-Function
+===============
+zip function.zip LambdaFunctionOverHttps.py
+
+aws lambda create-function --function-name LambdaFunctionOverHttps \
+--zip-file fileb://function.zip --handler LambdaFunctionOverHttps.handler --runtime python3.9 \
+--role arn:aws:iam::313543595695:role/lambda-apigateway-role          ### Give your ami ROLE AMI-ID
+
+==> After creating lambda function we need to invoke
+
+sudo touch input.txt
+sudo chmod 777 input.txt
+paste this script in that file"(
+  {
+    "operation": "echo",
+    "payload": {
+        "somekey1": "somevalue1",
+        "somekey2": "somevalue2"
+    }
+}
+)"
+after that run this command to invoke 
+----------------------------------------
+aws lambda invoke --function-name LambdaFunctionOverHttps \
+--payload file://input.txt outputfile.txt
+
+create the API Gateway REST API you will use to invoke your Lambda function
+============================================================================
+Crete API gateway in us-west-2
+choose Api gateway-name as : DynamoDBOperations
+create Resource Name as : DynamoDBManager
+under that resource create "post method"
+choose your lambda function which you created previously {LambdaFunctionOverHttps}
+choose your region (us-west-2)
+
+
+
+Create DynamoDB table
+======================
+Give table name as :lambda-apigateway
+Give partition keyname as : inst_name
+Click on create a table
+Copy the below test invoke code go to api gateway click on test and paste that script under Request-Body and click on test
+New data is added in Under Dynamodb table  
+
+{
+  "operation": "create",
+  "payload": {
+    "Item": {
+      "inst_name": "1234ABCD",
+      "number": 5
+    }
+  }
+}
+
+Replace above script
+---------------------
+
+{
+  "operation": "create",
+  "payload": {
+    "Item": {
+      "inst_name": "MydynamoDB",
+      "id": "1234ABCD",
+      "number": 5
+    }
+  }
+}
+
+
+Now deploy your changes, create new deploy stage and click on deploy and copy your api-gateway end point along with your resource name 
+
+If you want to create or add new data in your database table through cli you can use below commands in that you can change your api-end point url along with your resource name
+
+curl https://yyp4rau2i1.execute-api.us-west-2.amazonaws.com/test//dynamodbmanager \
+-d '{"operation": "create", "payload": {"Item": {"inst_name": "5678EFGH", "number": 15}}}'
+(OR)
+
+curl https://8bue09wn9h.execute-api.us-west-2.amazonaws.com/test/dynamodbmanager \
+-d '{"operation": "create", "payload": {"Item": {"inst_name": "5678EFGH", "number": 15}}}'
+
+DELETE
+=======
+curl https://8bue09wn9h.execute-api.us-west-2.amazonaws.com/test/dynamodbmanager \
+-d '{"operation": "delete", "payload": {"Key": {"inst_name": "5678EFGH"}}}'
+
+*** Backend to Database connection is completed
+
+FRONT-END
+=========
+Fork this repo in your github accounts:
+https://github.com/VishakArudhra/BastionBook-3tierArch.git
+
+Pull the frontend code from the repo in the home directory (/home/ubuntu) and rename the project folder to 'bas10book'.
+
+command: git clone <repo-url> bas10book
+
+Within the file bastionbook.py replace the apigateway endpoint with your own.
+
+sudo apt update
+sudo apt install python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools
+
+pip install gunicorn flask
+
+python3 myproject.py (check if the application can be accessed through the IP address at port 5000)
+ctrl + c
+
+sudo apt install gunicorn
+
+gunicorn --bind 0.0.0.0:5000 wsgi:app (check the app accessibility again)
+ctrl + c
+
+
+
+CONFIGURING-NGINX TO PROXY (REFERENCE:https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-gunicorn-and-nginx-on-ubuntu-22-04)
+=========================
+we need to install nginx
+To install nginx follow this link: https://www.digitalocean.com/community/tutorials/how-to-install-nginx-on-ubuntu-22-04
+we need to enter this path paste this below script: sudo vim /etc/systemd/system/bas10book.service
+
+[Unit]
+Description=Gunicorn instance to serve bas10book
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/bas10book
+ExecStart=/usr/local/bin/gunicorn --workers 3 --bind unix:bas10book.sock -m 007 wsgi:app  # check gunicorn binary path for that use "which gunicorn" command and change your gunicorn binary path
+
+[Install]
+WantedBy=multi-user.target
+
+
+After adding this script,run this command: sudo systemctl start bas10book
+sudo systemctl enable bas10book
+sudo systemctl status bas10book
+
+
+CONFIGURE NGINX TO PROXY
+==========================
+sudo vim /etc/nginx/sites-available/bas10book
+
+server {
+    listen 80;
+    server_name <private ip of your ec2 instance>;
+
+ 
+
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/home/ubuntu/bas10book/bas10book.sock;
+    }
+}
+
+sudo ln -s /etc/nginx/sites-available/bas10book /etc/nginx/sites-enabled
+sudo nginx -t
+sudo systemctl restart nginx
+
+
+
+In this path delete default file "cd /etc/nginx/sites-enabled/"
+Restart both the services: sudo systemctl restart bas10book
+                           sudo systemctl restart nginx
+sudo chmod 777 /home/ubuntu   --- After that copy your ip-address and open in your browser you can able to see "Hello World"
+
+Now along with your ip address add /register at the end of your ip-address. Now you are able to access the application 
+
+***Write ansible-playbook for above entite steps to connect front-end to backend and remotely execute the playbook from master instance to managed instance
+
+
+
+
+
+
+
+
+
+REFERENCE
+================
+Follow this to setup the backend to database infra:
+https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway-tutorial.html
+
+Fork this repo in your github accounts:
+https://github.com/VishakArudhra/BastionBook-3tierArch.git
+
+Pull the frontend code from the repo in the home directory (/home/ubuntu) and rename the project folder to 'bas10book'.
+
+cd /home/ubuntu
+git clone <repo url> bas10book
+
+Within the files, replace the apigateway endpoint with your own.
+
+sudo apt update
+sudo apt install python3-pip python3-dev build-essential libssl-dev libffi-dev python3-setuptools
+
+pip install gunicorn flask
+
+python3 myproject.py (check if the application can be accessed through the IP address at port 5000)
+ctrl + c
+
+gunicorn --bind 0.0.0.0:5000 wsgi:app (check the app accessibility again)
+ctrl + c
+
+How to quicly ensure the backend to database setup:
+--------------------------------------------------
+note the deployed api gateway endpoint somewhere.
+test the endpoint with different inputs for different CRUD operations.
+Why use Gunicorn?
+It helps interface nginx and python
+
+Important step to follow while setting up DynamoDb table:
+----------------------------------------------------------
+delete the existing table and create a new one.
+setup 'inst_name' as the partition key
+
+Here's the reference guide to setup application server through nginx:
+------------------------------------------------------------------------
+https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-gunicorn-and-nginx-on-ubuntu-22-04
+
+
+here's an article on what's a service and a service file in Linux.
+-------------------------------------------------------------------
+https://www.imaginelinux.com/service-in-linux/
+
+
+
+HOW TO CONVERT ZIP FILE & HOW TO COPY ZIP FILE FROM UBUNTU SERVER TO WINDOWS
+=====================================================================================
+To convert zip file-------> sudo zip -r ansible-playbook.zip ./bas10book-application
+
+To copy zip file from ubuntu machine to windows (git-bash)--------> scp -i awskey-oregon.pem ubuntu@34.219.141.175:/home/ubuntu/ansible-playbook.zip ./
+
+If you face any permission denied issue try in this way
+--------------------------------------------------------
+ssh-keygen -b 2048 -t rsa, after running this command change the path under this line "Enter file in which to save the key (/root/.ssh/id_rsa): "/home/ubuntu/.ssh/custom_key"   ---enter custom-key creaed go to this path cd /home/ubuntu/.ssh
+copy your custom_key.pub key and go to sudo vim authorized_keys this file and paste your custom_key.pub below existed key and save the file
+copy your custom_key (private key) and go to git-bash create one file custom_key name and paste that key and save the file and try below command to copy
+
+To copy zip file from ubuntu machine to windows---------> scp -i custom_key ubuntu@34.219.141.175:/home/ubuntu/ansible-playbook.zip ./
+
+
+
+
