@@ -1,0 +1,105 @@
+---
+- name: Deploy Bas10Book Application
+  hosts: all
+  remote_user: ubuntu
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: Clone Bas10book Application Repository    
+      git:
+        repo: https://github.com/Umapoornima/BastionBook.git
+        dest: /home/ubuntu/bas10book/
+        clone: yes
+        update: yes
+        version: main
+
+    - name: update repo
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+       name:
+         - python3-pip
+         - python3-dev
+         - build-essential
+         - libssl-dev
+         - libffi-dev
+         - python3-setuptools
+       state: present
+
+    - name: Install Flask and Gunicorn
+      pip:
+        name:
+          - gunicorn
+          - flask
+        state: present
+
+    - name: Copy bas10book systemd service config
+      copy:
+        src: files/bas10book.service
+        dest: /etc/systemd/system/bas10book.service
+        owner: root
+        group: root
+        mode: 0755
+        backup: yes
+
+    - name: chown ~/bas10book to ubuntu:www-data
+      file:
+        path: /home/ubuntu/bas10book
+        owner: ubuntu
+        group: www-data
+        recurse: yes
+        mode: 0755
+
+    - name: start bas10book service
+      systemd:
+        name: bas10book
+        state: started
+        enabled: yes
+
+
+    - name: source .profile
+      become: true
+      shell: source /home/ubuntu/.profile
+      args:
+        executable: /bin/bash
+
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Setup bas10book server block
+      template:
+        src: templates/bas10book.conf
+        dest: /etc/nginx/sites-available/bas10book
+        mode: 0644
+
+    - name: Remove default server block
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Create symlink for server block
+      file:
+        src: /etc/nginx/sites-available/bas10book
+        dest: /etc/nginx/sites-enabled/bas10book
+        state: link
+
+    - name: Set permissions for /home/ubuntu
+      file:
+        path: /home/ubuntu
+        mode: '0755'
+
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: true
+    
+    - name: Restart bas10book
+      systemd:
+        name: bas10book
+        state: restarted
+        enabled: true

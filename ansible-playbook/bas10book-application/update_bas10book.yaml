@@ -1,0 +1,27 @@
+---
+- name: Update bas10book application repo
+  hosts: all  # Replace with the appropriate host/group
+  remote_user: ubuntu
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: Update application repository
+      git:
+        repo: https://github.com/Umapoornima/BastionBook.git
+        dest: /home/ubuntu/bas10book/
+        clone: yes
+        update: yes
+        force: yes
+
+    - name: Restart bas10book service
+      systemd:
+        name: bas10book
+        state: restarted
+        enabled: true
+
+    - name: Restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: true
+
