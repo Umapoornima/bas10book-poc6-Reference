@@ -1,0 +1,135 @@
+***Write ansible-playbook to connect front-end to backend and remotely execute the playbook from master instance to managed instance
+====================================================================================================================================
+
+1. first launch two ubuntu servers one for ansible-master and another for ansible-node
+2. first copy your pem file to your master server by using git-bash
+     scp -i C:/Users/admin/Downloads/awskey-oregon.pem awskey-oregon.pem ubuntu@54.188.23.133:/home/ubuntu
+3. copy your ansible playbook zip from windows to your ansible-master server
+     scp -i C:/Users/admin/Downloads/awskey-oregon.pem ansible-playbook.zip ubuntu@54.188.23.133:/home/ubuntu   (or)
+     scp -i awskey-oregon.pem Mybas10bookAnsibleSetup.zip ubuntu@35.88.141.95:/home/ubuntu
+
+     sudo apt install zip
+     unzip filename.zip
+     ====> run ls command their you can able to see "bas10book-application" folder 
+           Go to this folder "cd bas10book-application" their you can able to see "deploy_bas10book.yml"&"update_bas10book.yaml" in those files instead of git repo url replace your git repository url 
+                    
+  
+4. Install ansible package in ansible-master server (link:https://stackoverflow.com/questions/63672853/ansible-config-file-not-found-using-defaults)
+        sudo apt update
+        sudo apt install software-properties-common
+        sudo apt-add-repository --yes --update ppa:ansible/ansible
+        sudo apt install ansible
+5. Now, we need to give the ssh connection for master to slave 
+        first copy your pem file
+        sudo chmod 400 awskey-oregon.pem
+        ssh-agent bash
+        ssh-add /home/ubuntu/awskey-oregon.pem  (or)
+        ssh-add ~/.ssh/awskey-oregon.pem (or) ssh-add /home/ubuntu/.ssh/awskey-oregon.pem  ----ssh-add /path/to/awskey-oregon.pem
+        ssh -i awskey-oregon.pem ubuntu@18.237.254.126
+        sudo chmod 400 awskey-oregon.pem
+        ssh -i awskey-oregon.pem ubuntu@18.237.254.126(node-pubip)  --- for connecting master to node
+        sudo ssh -i /home/ubuntu/awskey-oregon.pem ubuntu@54.188.124.65   --- for connecting master to slave if you have any permission denied issue
+6. Run your ansible playbook remotely execute the playbook from the master instance on the managed-node instance
+       ansible-playbook -i 34.222.109.37, deploy_bas10book.yml
+7. check whether the application is being served in the ip address of the managed-node instance.,
+       34.222.109.37/register
+
+
+HOW TO SET-IT-UP DYNAMIC INVENTORY FILE
+=============================================
+8. create dynamic inventory file follow this document (LINK: https://devopscube.com/setup-ansible-aws-dynamic-inventory/
+                                        https://docs.ansible.com/ansible/latest/collections/amazon/aws/docsite/aws_ec2_guide.html )
+
+9. created iam role and policy for ec2 full access and attached that role to your master instance(where your ansible is running)
+10. Ensure you have python3 & pip3 installed in your Ansible server
+                  python3 --version
+                  sudo apt-get install python3 -y
+                  sudo apt-get install python3-pip -y
+      If you have used the Ansible ppa for installation, install pip using the following command
+                  sudo apt-get install python-boto3   (or)
+                  sudo pip3 install boto3
+                  sudo pip show boto3
+
+11. create one directory --- sudo mkdir -p /opt/ansible/inventory
+                         cd /opt/ansible/inventory
+                         sudo touch aws_ec2.yaml
+                         sudo vi aws_ec2.yaml  # add this below script and save the file
+---
+plugin: aws_ec2
+regions:
+  - us-west-2  ###Add your desired region here
+filters:
+  "tag:Name": "node"  ####select your ec2-target instance and click on tags their you can able to see key and value add key,value names under tag
+
+12.Go to ansible home directory under ansible.cfg file "cd /etc/ansible" sudo vi ansible.cfg    ## add below script and save it 
+[defaults]
+host_key_checking = False
+inventory         = /opt/ansible/inventory/aws_ec2.yaml
+
+[inventory]
+enable_plugins: aws_ec2
+
+13. Now let’s test the dynamic inventory configuration by listing the ec2 instances.
+             ansible-inventory -i /opt/ansible/inventory/aws_ec2.yaml --list
+
+14. Execute the following command to test if Ansible is able to ping all the machines returned by the dynamic inventory
+             ansible all -m ping
+
+15. ansible-playbook -i /opt/ansible/inventory/aws_ec2.yaml deploy_bas10book.yml   ------> Run the playbook through dynamic inventory
+
+
+16. Install Jenkins IN THE Ansile-master SERVER
+===========================================
+sudo apt update
+sudo apt install openjdk-17-jre
+java -version
+
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
+  /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+  /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+sudo apt-get update
+sudo apt-get install jenkins
+sudo systemctl status jenkins
+sudo systemctl start jenkins
+sudo syatemctl enable jenkins
+
+Copy your ansible-master public-p "35.88.141.95:8080" along with port no 8080 you can able to see the jenkins dashboard now unlock the jenkins
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+**dpkg -l | grep openjdk    -----> list out the packages
+**sudo apt-get purge openjdk-17-jre-headless   --- To remove the java package
+
+17. Go to your Jenkis Dashboard Install ansible plugin in the jenkins dashboard (for installing ansible plugin go to manage jenkins and click on "plugins" option and go to Available plugins and search ansible plugin and click on install)
+18. Go to manage jenkins under that section click on "Tools" & Go to "Ansible installations" section and give Name as like "ansible-playbook" and "Path to ansible executables directory" under this section give path as like "/usr/bin/" and click on save
+     
+19. Setup webhook from the git repository to trigger the jenkins on each commit pushed to the main branch repo.
+      ---> Go to your bastionbook application repository and go to settings their we can able to see webhooks click on that create a new webhook
+      ----> under payload url give your jenkins dashboard url along with "github-webhooks" extension
+          Ex: http://35.88.141.95:8080/github-webhook/
+
+20. configure a build job(free-style) to monitor repo for changes and configure the ansible plugin for the build job to run the required playbooks and propagate the repo changes to the target instances
+    
+    ---->create one free-style job in your jenkins dash-board and click on that job
+    ---->click on configuration
+          click on Source Code Management as a git and copy and paste your git-hub repository url and change your branch as a "main"
+          under Build Triggers section enable "GitHub hook trigger for GITScm polling" option
+          under Build Steps section click on add build step and select "Invoke Ansible Playbook" and give your ansible playbook path "/var/lib/jenkins/workspace/bas10book-application/update_bas10book.yaml"
+                Please remember to configure your jenkins project to run your 'update' ansible playbook
+          under credentials section click "Add" and click on "jenkins OR jenkins credentials provider"
+             -->under kind section select "SSH User name with private key otion"
+             -->under ID give "ssh-privatekey" for identification
+             -->under Description give some description like "credentials for jenkins"
+             -->under user-name section give user-name of your target node server "ubuntu"
+             -->under private key section click on "Enter directly" option and click on add and copy your private-key pem file key and paste (which you used to launch your ansible-master and ansible-node serers)
+             -->click on Add and add your credentials which you created in previous step and 
+             -->click on save
+    
+
+
+
+
+
+
