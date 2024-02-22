@@ -3,7 +3,9 @@
 
 1. first launch two ubuntu servers one for ansible-master and another for ansible-node
 2. first copy your pem file to your master server by using git-bash
-     scp -i C:/Users/admin/Downloads/awskey-oregon.pem awskey-oregon.pem ubuntu@54.188.23.133:/home/ubuntu
+     scp -i C:/Users/admin/Downloads/awskey-oregon.pem awskey-oregon.pem ubuntu@54.188.23.133:/home/ubuntu (or)
+     scp -i /c/Users/WELCOME/Downloads/mawskey.pem /c/Users/WELCOME/Downloads/mawskey.pem ubuntu@54.234.119.47:/home/ubuntu
+
 3. copy your ansible playbook zip from windows to your ansible-master server
      scp -i C:/Users/admin/Downloads/awskey-oregon.pem ansible-playbook.zip ubuntu@54.188.23.133:/home/ubuntu   (or)
      scp -i awskey-oregon.pem Mybas10bookAnsibleSetup.zip ubuntu@35.88.141.95:/home/ubuntu
